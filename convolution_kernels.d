@@ -151,4 +151,5 @@ convolution_kernels.o : convolution_kernels.cu \
     blob.h \
     logging.h \
     convolution.h \
-    /usr/lib/gcc/x86_64-linux-gnu/7/include/stdbool.h
+    /usr/lib/gcc/x86_64-linux-gnu/7/include/stdbool.h \
+    timer.h
