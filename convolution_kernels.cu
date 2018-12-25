@@ -3,6 +3,7 @@
 #include "logging.h"
 #include "timer.h"
 
+
 void convolve_cpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_param)
 {
     for(int group_id=0;group_id<conv_param->group;group_id++)
@@ -101,20 +102,40 @@ __global__ void gpu_device_convolve_depth_parrallel_simple
         int out_id = calc_blob_id(out_depth,out_y,out_x,out_h,out_w);            
         for(int in_depth=0;in_depth<in_depth_max;in_depth++)
         {            
-
-            int in_y = out_y;
-            int in_x = out_x;
-
-            int weigth_y = in_depth;
-            int weight_x = 0;
-            
-            int weight_id = calc_blob_id(out_depth,weigth_y,weight_x,w_h,w_w);
-            int in_id = calc_blob_id(in_depth,in_y,in_x,in_h,in_w);
+            int weight_id = calc_blob_id(out_depth,in_depth,0,w_h,w_w);
+            int in_id = calc_blob_id(in_depth,out_y,out_x,in_h,in_w);
 
             data_out[out_id] += data_weight[weight_id] * data_in[in_id]; 
         }
     }
 }
+
+__global__ void gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed
+    (float* data_in,float * data_weight, float* data_out // Data
+    ,int w_h // weigth height and depth
+    ,int in_out_wh,int out_d // output width and height    
+    ,int in_depth_max)
+    {
+    unsigned int in_out_xy = blockIdx.y*blockDim.y+ threadIdx.y;  
+    unsigned int out_depth = blockIdx.x*blockDim.x + threadIdx.x;
+    
+    
+
+    if(out_depth < out_d && in_out_xy < in_out_wh)
+    {
+        int out_id = out_depth * in_out_wh + in_out_xy;            
+        int in_id = in_out_xy; // per depth the same input values are loaded
+        int weight_id = out_depth * w_h; // Weigth is different per depth
+            
+        for(int in_depth=0;in_depth<in_depth_max;in_depth++)
+        {            
+            data_out[out_id] += data_weight[weight_id] * data_in[in_id]; 
+            in_id+=in_out_wh;
+            weight_id++;
+        }
+    }
+}
+
 
 __global__ void gpu_device_convolve_naive_group_parrallel
     (float* data_in,float * data_weight, float* data_out // Data
@@ -155,6 +176,9 @@ __global__ void gpu_device_convolve_naive_group_parrallel
 
 
 
+
+
+
 int get_next_pow2(int v)
 {
     v--;
@@ -190,11 +214,7 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
   int threadsPerBlockX = get_next_pow2(out_depth_max/numBlocksX+1);
   int threadsPerBlockYZ =out->h/numBlocksYZ;
 
-  if(out->w == 1)
-  {
-      numBlocksYZ = 1;
-      threadsPerBlockYZ=1;
-  }
+ 
 
   if(out_depth_max == 96 && out->w == 112)
   {  // Cant get this specifc convolution to work
@@ -208,19 +228,49 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
 
   if(conv_param->group == 1)
   {
-    dim3 grid( numBlocksX,numBlocksYZ, numBlocksYZ );          
-    dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
+
+    
+    
+    // Width and height in one dimension?
     if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
     {
-        gpu_device_convolve_depth_parrallel_simple<<<grid,block>>>(
-            in_data,w_data,out_data
-            ,in->w,in->h,in->d
-            ,w->w,w->h
-            ,out->w,out->h,out->d
-            ,in_depth_max);
+        numBlocksYZ = 49;
+        if(out->w < 50)
+        {
+            numBlocksYZ =28;
+        } 
+        //if(out->w < 25)
+        
+
+        threadsPerBlockYZ = out->w * out->w / numBlocksYZ;
+        if(out->w == 1)
+        {
+            numBlocksYZ = 1;
+            threadsPerBlockYZ=1;
+        } 
+        
+        dim3 grid( numBlocksX,numBlocksYZ, 1 );
+        dim3 block(threadsPerBlockX, threadsPerBlockYZ, 1); 
+        gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed<<<grid,block>>>(
+        in_data,w_data,out_data
+        ,w->h
+        ,out->w*out->h,out->d
+        ,in_depth_max);
+        if(in->d < out->d)
+        {
+            
+        }
+        else
+        {
+            printf("Wrong ________---------------------------\n");
+        }
+           
     }  
     else
     {
+        dim3 grid( numBlocksX,numBlocksYZ, numBlocksYZ );
+        dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
+      
         gpu_device_convolve_depth_parrallel<<<grid,block>>>(
             in_data,w_data,out_data
             ,conv_param->Sx,conv_param->Sy

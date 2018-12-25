@@ -50,7 +50,10 @@ int main(int argc, char* argv[]){
     
     
     //evaluate the network
+    timer_start();
     BLOB* out = network(&mobilenetv2, img);
+    printf("Total Network Execution Time = %lf ms \n",(double)timer_stop()/1000);
+    timer_destroy();
 
     
     //get class index of maximum
