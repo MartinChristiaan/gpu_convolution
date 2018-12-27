@@ -46,7 +46,7 @@ __device__ int calc_blob_id(int z,int y,int x,int height,int width)
 
 }
 
-
+        // More complex convolution, runs only once so not really worth optimizing 
 __global__ void gpu_device_convolve_depth_parrallel
     (float* data_in,float * data_weight, float* data_out // Data
     ,int Sx,int Sy // Sizes ...
@@ -85,41 +85,46 @@ __global__ void gpu_device_convolve_depth_parrallel
         }
     }
 }
-__global__ void gpu_device_convolve_depth_parrallel_simple
-    (float* data_in,float * data_weight, float* data_out // Data
-    ,int in_w,int in_h,int in_d // input blob dimensions
-    ,int w_w,int w_h // weigth height and depth
-    ,int out_w,int out_h,int out_d // output width and height
+// Old 
+// __global__ void gpu_device_convolve_depth_parrallel_simple
+//     (float* data_in,float * data_weight, float* data_out // Data
+//     ,int in_w,int in_h,int in_d // input blob dimensions
+//     ,int w_w,int w_h // weigth height and depth
+//     ,int out_w,int out_h,int out_d // output width and height
     
-    ,int in_depth_max)
-    {
-    unsigned int out_x = blockIdx.z*blockDim.z+ threadIdx.z;  
-    unsigned int out_y = blockIdx.y*blockDim.y + threadIdx.y;
-    unsigned int out_depth = blockIdx.x*blockDim.x + threadIdx.x;
+//     ,int in_depth_max)
+//     {
+//     unsigned int out_x = blockIdx.z*blockDim.z+ threadIdx.z;  
+//     unsigned int out_y = blockIdx.y*blockDim.y + threadIdx.y;
+//     unsigned int out_depth = blockIdx.x*blockDim.x + threadIdx.x;
     
-    if(out_depth < out_d)
-    {
-        int out_id = calc_blob_id(out_depth,out_y,out_x,out_h,out_w);            
-        for(int in_depth=0;in_depth<in_depth_max;in_depth++)
-        {            
-            int weight_id = calc_blob_id(out_depth,in_depth,0,w_h,w_w);
-            int in_id = calc_blob_id(in_depth,out_y,out_x,in_h,in_w);
+//     if(out_depth < out_d)
+//     {
+//         int out_id = calc_blob_id(out_depth,out_y,out_x,out_h,out_w);            
+//         for(int in_depth=0;in_depth<in_depth_max;in_depth++)
+//         {            
+//             int weight_id = calc_blob_id(out_depth,in_depth,0,w_h,w_w);
+//             int in_id = calc_blob_id(in_depth,out_y,out_x,in_h,in_w);
 
-            data_out[out_id] += data_weight[weight_id] * data_in[in_id]; 
-        }
-    }
-}
+//             data_out[out_id] += data_weight[weight_id] * data_in[in_id]; 
+//         }
+//     }
+// }
 
+
+// multiplexing width and height may reduce the cost of address calculation
+// This kernel is still the most expensive, and runs often
+// input width and height is always equal to output width and height
 __global__ void gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed
     (float* data_in,float * data_weight, float* data_out // Data
     ,int w_h // weigth height and depth
-    ,int in_out_wh,int out_d // output width and height    
+    ,int in_out_wh,int out_d // input/output width * height, output depth    
     ,int in_depth_max)
     {
-    unsigned int in_out_xy = blockIdx.y*blockDim.y+ threadIdx.y;  
+    unsigned int in_out_xy = blockIdx.y*blockDim.y+ threadIdx.y;// 2d -> 1d pixel adress  
     unsigned int out_depth = blockIdx.x*blockDim.x + threadIdx.x;
     
-    
+
 
     if(out_depth < out_d && in_out_xy < in_out_wh)
     {
@@ -137,6 +142,9 @@ __global__ void gpu_device_convolve_depth_parrallel_simple_height_width_multiple
 }
 
 
+
+
+// Runs a lot but already is relative quick
 __global__ void gpu_device_convolve_naive_group_parrallel
     (float* data_in,float * data_weight, float* data_out // Data
     ,int Sx,int Sy // Sizes ...
@@ -170,13 +178,8 @@ __global__ void gpu_device_convolve_naive_group_parrallel
                 data_out[out_id] += data_weight[weight_id] * data_in[in_id]; 
             }
         }        
-        
     }
 }
-
-
-
-
 
 
 int get_next_pow2(int v)
@@ -192,7 +195,7 @@ int get_next_pow2(int v)
 
 }
 
-
+// HERE IT STARTS
 void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_param)
 {
   timer_start();
@@ -210,11 +213,9 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
   int numBlocksX=16;
   int numBlocksYZ = 7;
 
-
+  //  
   int threadsPerBlockX = get_next_pow2(out_depth_max/numBlocksX+1);
   int threadsPerBlockYZ =out->h/numBlocksYZ;
-
- 
 
   if(out_depth_max == 96 && out->w == 112)
   {  // Cant get this specifc convolution to work
@@ -222,55 +223,45 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
       return convolve_cpu(in,out,w,Kx,Ky, conv_param);
 
   }
-  
-  
-
-
+  // Can we ignore the group for loop?
   if(conv_param->group == 1)
   {
-
-    
-    
-    // Width and height in one dimension?
+    // Can we ignore all these loop?
     if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
     {
+        // For this convolution I mutliplex the width and height to reduce
+        // address calculations
         numBlocksYZ = 49;
         if(out->w < 50)
         {
             numBlocksYZ =28;
+            // Can we get away with a smaller number of blocks?
         } 
-        //if(out->w < 25)
-        
-
+     
         threadsPerBlockYZ = out->w * out->w / numBlocksYZ;
         if(out->w == 1)
         {
+            // Sometimes width/height = 1
             numBlocksYZ = 1;
             threadsPerBlockYZ=1;
         } 
         
         dim3 grid( numBlocksX,numBlocksYZ, 1 );
         dim3 block(threadsPerBlockX, threadsPerBlockYZ, 1); 
+        // Simplest yet slowest convolution
         gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed<<<grid,block>>>(
         in_data,w_data,out_data
         ,w->h
         ,out->w*out->h,out->d
         ,in_depth_max);
-        if(in->d < out->d)
-        {
-            
-        }
-        else
-        {
-            printf("Wrong ________---------------------------\n");
-        }
+        
            
     }  
     else
     {
         dim3 grid( numBlocksX,numBlocksYZ, numBlocksYZ );
         dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
-      
+        // More complex convolution, runs only once so not really worth optimizing    
         gpu_device_convolve_depth_parrallel<<<grid,block>>>(
             in_data,w_data,out_data
             ,conv_param->Sx,conv_param->Sy
@@ -296,7 +287,7 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
     dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
   
     timer_start();
-
+    //
     gpu_device_convolve_naive_group_parrallel<<<grid,block>>>(
               in_data,w_data,out_data
               ,conv_param->Sx,conv_param->Sy
@@ -328,7 +319,14 @@ printf("BLOCK : (x : %i) (y : % i) (z : %i) \n",threadsPerBlockX,threadsPerBlock
   cudaFree(w_data);
   if(conv_param->group == 1)
   {
-    writeToFile("depth_Parrallel",(double)timer_stop());
+    if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
+    {
+        writeToFile("depth_Parrallel_simple",(double)timer_stop());
+    }
+    else
+    {
+        writeToFile("depth_Parrallel_complex",(double)timer_stop());
+    }
   }
   else
   {

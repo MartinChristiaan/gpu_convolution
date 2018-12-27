@@ -31,13 +31,13 @@ def plot_suffixes(suffixes):
     plt.subplot(3,1,2)
 
     plt.bar(ind,num_execs)
-    plt.ylabel('Number of executions')
+    plt.ylabel('Number of executions (-)')
     plt.xticks(ind,suffixes)
 
     plt.subplot(3,1,3)
 
     plt.bar(ind,_times/num_execs)
-    plt.ylabel('tpe')
+    plt.ylabel('tpe (ms)')
     plt.xticks(ind,suffixes)
 
 
@@ -45,7 +45,7 @@ def plot_suffixes(suffixes):
 
 
 suffixes = ["expand","dwise","linear","preprocessing"]
-suffixes2 = ["depth_Parrallel","group_Parrallel"]
+suffixes2 = ["depth_Parrallel_simple","depth_Parrallel_complex","group_Parrallel"]
 plot_suffixes(suffixes)
 plot_suffixes(suffixes2)
 
