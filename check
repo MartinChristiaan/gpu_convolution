@@ -56,6 +56,6 @@ bins/conv6_3_dwise_weights.bin
 bins/conv6_3_linear_weights.bin
 bins/conv6_4_weights.bin
 bins/fc7_weights.bin
-Total Network Execution Time = 188.959000 ms 
+Total Network Execution Time = 165.715000 ms 
 Detected class: 281
 [0;33mRobot finds kitteh![0m
