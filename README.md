@@ -9,7 +9,7 @@ To download a single image and pass it through the network:
 ```shell
 make check
 ```
-![Alt text](/CurrentPerformance.jpg?raw=true "Current performance of the three convolutions")
+![Alt text](/CurrentPerformance.png?raw=true "Current performance of the three convolutions")
 
 
 To test on several images specified by a list in the makefile
