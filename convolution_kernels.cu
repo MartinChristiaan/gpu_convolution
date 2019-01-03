@@ -217,12 +217,12 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
   int threadsPerBlockX = get_next_pow2(out_depth_max/numBlocksX+1);
   int threadsPerBlockYZ =out->h/numBlocksYZ;
 
-  if(out_depth_max == 96 && out->w == 112)
-  {  // Cant get this specifc convolution to work
-        timer_destroy();
-      return convolve_cpu(in,out,w,Kx,Ky, conv_param);
+//   if(out_depth_max == 96 && out->w == 112)
+//   {  // Cant get this specifc convolution to work
+//         timer_destroy();
+//       return convolve_cpu(in,out,w,Kx,Ky, conv_param);
 
-  }
+//   }
   // Can we ignore the group for loop?
   if(conv_param->group == 1)
   {
@@ -231,7 +231,12 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
     {
         // For this convolution I mutliplex the width and height to reduce
         // address calculations
-        numBlocksYZ = 49;
+        numBlocksYZ = 98;
+        
+        if(out->w < 90)
+        {
+            numBlocksYZ = 49;
+        }
         if(out->w < 50)
         {
             numBlocksYZ =28;
@@ -301,15 +306,28 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
 //   }
     
 }
+
 #ifdef DEBUG
 printf("groups : %i \n",conv_param->group);
 printf("out_width %i, out_height %i , out_depth_max : %i \n",out->w,out->h,out_depth_max);
 printf("in_width %i, in_height %i , in_depth_max : %i \n",in->w,in->h,in_depth_max);
 printf("Kx : %i, Ky : %i , Sx : %i ,Sy : %i \n",Kx,Ky,conv_param->Sx,conv_param->Sy);
-
-
 printf("GRID : (x : %i) (y : % i) (z : %i) , ",numBlocksX,numBlocksYZ,numBlocksYZ);
-printf("BLOCK : (x : %i) (y : % i) (z : %i) \n",threadsPerBlockX,threadsPerBlockYZ,threadsPerBlockYZ);
+int threads_per_block = threadsPerBlockX * threadsPerBlockYZ * threadsPerBlockYZ;
+if(conv_param->group == 1)
+  {
+    // Can we ignore all these loop?
+    if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
+    {
+        threads_per_block = threadsPerBlockX * threadsPerBlockYZ;
+    }
+}
+if(threads_per_block > 1024)
+{
+    printf("TOO MANY THREADS PER BLOCK!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");    
+}
+printf("BLOCK : (x : %i) (y : % i) (z : %i), (total tpb : %i) \n",threadsPerBlockX,threadsPerBlockYZ,threadsPerBlockYZ,threads_per_block);
+
 #endif
  
   gpu2blob(out,out_data);
