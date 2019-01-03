@@ -2,7 +2,6 @@
 #include "convolution.h"
 #include "logging.h"
 #include "timer.h"
-#include <math.h>
 
 
 void convolve_cpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_param)
@@ -196,35 +195,6 @@ int get_next_pow2(int v)
 
 }
 
-int ceil_div(int val,int div)
-{
-    int result = val/div;
-    if(result * div < val) ++result;
-    return result;
-}
-
-int _max(int val1,int val2)
-{
-    if(val1 > val2)
-    {
-        return val1;
-    }
-    else
-    {
-        return val2;
-    }
-}
-int _min(int val1,int val2)
-{
-    if(val1 < val2)
-    {
-        return val1;
-    }
-    else
-    {
-        return val2;
-    }
-}
 // HERE IT STARTS
 void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_param)
 {
@@ -240,43 +210,47 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
   blob2gpu(out_data, out);
   blob2gpu(w_data, w); 
 
+  int numBlocksX=16;
+  int numBlocksYZ = 7;
 
-  int threadsPerBlockX = 1;
-  int numBlocksX= 1;
-  int threadsPerBlockYZ = 1;
-  int numBlocksYZ = 1;
+  //  
+  int threadsPerBlockX = get_next_pow2(out_depth_max/numBlocksX+1);
+  int threadsPerBlockYZ =out->h/numBlocksYZ;
+
+//   if(out_depth_max == 96 && out->w == 112)
+//   {  // Cant get this specifc convolution to work
+//         timer_destroy();
+//       return convolve_cpu(in,out,w,Kx,Ky, conv_param);
+
+//   }
   // Can we ignore the group for loop?
   if(conv_param->group == 1)
   {
-
-    
     // Can we ignore all these loop?
     if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
     {
-
-        threadsPerBlockX = _min(out_depth_max,1024);
-        numBlocksX= ceil_div(out_depth_max,threadsPerBlockX);
-        numBlocksYZ = ceil_div(out->h,threadsPerBlockYZ);
-          
-        threadsPerBlockYZ = 1024/threadsPerBlockX;
-        numBlocksYZ = ceil_div(out->w * out->w, threadsPerBlockYZ);
-
-        if(out->d == 1)
+        // For this convolution I mutliplex the width and height to reduce
+        // address calculations
+        numBlocksYZ = 98;
+        
+        if(out->w < 90)
         {
-            threadsPerBlockYZ =  _min(1024,out->w * out->w);
-            numBlocksYZ = ceil_div(out->w * out->w,threadsPerBlockYZ);
-
-            threadsPerBlockX = 1;
-            numBlocksX = 1;
+            numBlocksYZ = 49;
         }
+        if(out->w < 50)
+        {
+            numBlocksYZ =28;
+            // Can we get away with a smaller number of blocks?
+        } 
+     
+        threadsPerBlockYZ = out->w * out->w / numBlocksYZ;
         if(out->w == 1)
         {
+            // Sometimes width/height = 1
             numBlocksYZ = 1;
             threadsPerBlockYZ=1;
-        }
-
-        //threadsPerBlockYZ = out->w * out->w / numBlocksYZ;
-       
+        } 
+        
         dim3 grid( numBlocksX,numBlocksYZ, 1 );
         dim3 block(threadsPerBlockX, threadsPerBlockYZ, 1); 
         // Simplest yet slowest convolution
@@ -285,22 +259,14 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
         ,w->h
         ,out->w*out->h,out->d
         ,in_depth_max);
-
+        
            
     }  
     else
     {
-        //return convolve_cpu(in,out,w,Kx,Ky,conv_param);
-  
-
-        numBlocksX=16;
-        numBlocksYZ = 7;
-        threadsPerBlockX = get_next_pow2(out_depth_max/numBlocksX+1);
-        threadsPerBlockYZ =out->h/numBlocksYZ;
-        
         dim3 grid( numBlocksX,numBlocksYZ, numBlocksYZ );
         dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
-        
+        // More complex convolution, runs only once so not really worth optimizing    
         gpu_device_convolve_depth_parrallel<<<grid,block>>>(
             in_data,w_data,out_data
             ,conv_param->Sx,conv_param->Sy
@@ -310,6 +276,7 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
             ,Ky,Kx      
             ,conv_param->group
             ,in_depth_max);
+   
     }
 
 
@@ -317,16 +284,10 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
   }
   else
   {
-    numBlocksX=16;
-    numBlocksYZ = 7;
-    threadsPerBlockYZ =out->h/numBlocksYZ;
+    //return convolve_cpu(in,out,w,Kx,Ky, conv_param);
+   // timeit_named("Group_Parrallel",())
+    //printf("WRONG\n");
     threadsPerBlockX = get_next_pow2(conv_param->group/numBlocksX+1);
-
-    if(out->w == 1)
-    {
-        numBlocksYZ = 1;
-        threadsPerBlockYZ=1;
-    }
     dim3 grid( numBlocksX,numBlocksYZ, numBlocksYZ );          
     dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
   
@@ -351,27 +312,21 @@ printf("groups : %i \n",conv_param->group);
 printf("out_width %i, out_height %i , out_depth_max : %i \n",out->w,out->h,out_depth_max);
 printf("in_width %i, in_height %i , in_depth_max : %i \n",in->w,in->h,in_depth_max);
 printf("Kx : %i, Ky : %i , Sx : %i ,Sy : %i \n",Kx,Ky,conv_param->Sx,conv_param->Sy);
+printf("GRID : (x : %i) (y : % i) (z : %i) , ",numBlocksX,numBlocksYZ,numBlocksYZ);
 int threads_per_block = threadsPerBlockX * threadsPerBlockYZ * threadsPerBlockYZ;
-if(conv_param->group == 1 && Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
+if(conv_param->group == 1)
   {
-    //
-        printf("GRID : (x : %i) (y : % i) (z : %i) , ",numBlocksX,numBlocksYZ,1);
-
+    // Can we ignore all these loop?
+    if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
+    {
         threads_per_block = threadsPerBlockX * threadsPerBlockYZ;
-        printf("BLOCK : (x : %i) (y : % i) (z : %i), (total tpb : %i) \n",threadsPerBlockX,threadsPerBlockYZ,1,threads_per_block);
-
-    
-}
-else
-{
-  printf("BLOCK : (x : %i) (y : % i) (z : %i), (total tpb : %i) \n",threadsPerBlockX,threadsPerBlockYZ,threadsPerBlockYZ,threads_per_block);
-  printf("GRID : (x : %i) (y : % i) (z : %i) , ",numBlocksX,numBlocksYZ,numBlocksYZ);
-
+    }
 }
 if(threads_per_block > 1024)
 {
     printf("TOO MANY THREADS PER BLOCK!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");    
 }
+printf("BLOCK : (x : %i) (y : % i) (z : %i), (total tpb : %i) \n",threadsPerBlockX,threadsPerBlockYZ,threadsPerBlockYZ,threads_per_block);
 
 #endif
  
