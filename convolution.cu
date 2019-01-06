@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "logging.h"
-
+#include "timer.h"
 typedef struct {
     int d;
     int h;
@@ -168,7 +168,10 @@ BLOB* convolution(BLOB* input, conv_param_t* conv_param){
     BLOB* w = load_weights(in, conv_param);
     //convolve_gpu(in,out,w,Kx,Ky,conv_param);
     #ifdef CPU_ONLY
+    timer_start();
     convolve_cpu(in,out,w,Kx,Ky,conv_param);
+    writeToFile("tp",(double)timer_stop());    
+    timer_destroy();
     #else
     #ifdef DEBUG
     convolve_cpu(in,out2,w,Kx,Ky,conv_param);

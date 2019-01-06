@@ -9,6 +9,29 @@ lines = [x.split() for x in lines]
 labels = [x[0] for x in lines]
 times = [float(x[1]) for x in lines]
 
+def calc_amdahl():
+    suffixes = ["Parrallel_dim"]
+    dims = np.zeros(len(suffixes))
+    n_exec = 0
+    for label_id in range(len(labels)):
+        for suffix_id in range(len(suffixes)):
+            if labels[label_id].endswith(suffixes[suffix_id]):
+                dims[suffix_id]+=times[label_id]
+                n_exec+=1
+    N = dims[0]/(n_exec)
+    print("N : " + str(N))
+
+def tp():
+    suffixes = ["tp","pre","total"]
+    dims = np.zeros(len(suffixes))
+    for label_id in range(len(labels)):
+        for suffix_id in range(len(suffixes)):
+            if labels[label_id].endswith(suffixes[suffix_id]):
+                dims[suffix_id]+=times[label_id]/1000
+    P = dims[0]/( dims[2])
+    print("tp : " + str(P))
+    print("pre : " + str(dims[1]))
+
 
 def plot_suffixes(suffixes):
     _times = np.zeros(len(suffixes))
@@ -39,11 +62,11 @@ def plot_suffixes(suffixes):
     plt.bar(ind,_times/num_execs)
     plt.ylabel('tpe (ms)')
     plt.xticks(ind,suffixes)
+    print(np.sum(_times))
 
-
-
-
-
+calc_amdahl()
+tp()
+#calc_amdahl()
 suffixes = ["expand","dwise","linear","preprocessing"]
 suffixes2 = ["depth_Parrallel_simple","depth_Parrallel_complex","group_Parrallel"]
 plot_suffixes(suffixes)

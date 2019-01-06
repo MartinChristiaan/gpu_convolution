@@ -2,6 +2,7 @@
 #include "convolution.h"
 #include "logging.h"
 #include "timer.h"
+#include <math.h>
 
 
 void convolve_cpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_param)
@@ -111,7 +112,7 @@ __global__ void gpu_device_convolve_depth_parrallel
 //     }
 // }
 
-
+/*
 // multiplexing width and height may reduce the cost of address calculation
 // This kernel is still the most expensive, and runs often
 // input width and height is always equal to output width and height
@@ -123,51 +124,73 @@ __global__ void gpu_device_convolve_depth_parrallel_simple_height_width_multiple
     {
     unsigned int in_out_xy = blockIdx.y*blockDim.y+ threadIdx.y;// 2d -> 1d pixel adress  
     unsigned int out_depth = blockIdx.x*blockDim.x + threadIdx.x;
-    
-
-
+	
     if(out_depth < out_d && in_out_xy < in_out_wh)
     {
+		float local_out;
         int out_id = out_depth * in_out_wh + in_out_xy;            
         int in_id = in_out_xy; // per depth the same input values are loaded
         int weight_id = out_depth * w_h; // Weigth is different per depth
             
+		local_out = data_out[out_id];
         for(int in_depth=0;in_depth<in_depth_max;in_depth++)
         {            
-            data_out[out_id] += data_weight[weight_id] * data_in[in_id]; 
+            local_out += data_weight[weight_id] * data_in[in_id]; 
             in_id+=in_out_wh;
             weight_id++;
         }
+		data_out[out_id] = local_out;
     }
 }
+*/
 
-__global__ void gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed_coallessed
+// multiplexing width and height may reduce the cost of address calculation
+// This kernel is still the most expensive, and runs often
+// input width and height is always equal to output width and height
+__global__ void gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed_shared_mem
     (float* data_in,float * data_weight, float* data_out // Data
     ,int w_h // weigth height and depth
     ,int in_out_wh,int out_d // input/output width * height, output depth    
     ,int in_depth_max)
     {
-
     unsigned int in_out_xy = blockIdx.y*blockDim.y+ threadIdx.y;// 2d -> 1d pixel adress  
     unsigned int out_depth = blockIdx.x*blockDim.x + threadIdx.x;
-  
     
+	int max_shared_mem_size = 0;//(blockIdx.y*blockDim.y+ threadIdx.y);//49152/sizeof(float);
+
+
+	
     if(out_depth < out_d && in_out_xy < in_out_wh)
     {
+
+		__shared__ float shared_out[12288];//shared memory size = 12288
+		
+		float local_out; //local storage of data output
         int out_id = out_depth * in_out_wh + in_out_xy;            
         int in_id = in_out_xy; // per depth the same input values are loaded
         int weight_id = out_depth * w_h; // Weigth is different per depth
-                
+          
+		if (out_id < in_out_wh && out_id < 12288)
+			shared_out[out_id] = data_out[out_id];
+		
+		__syncthreads();
+		
+		if (out_id >= 12288){
+			local_out = data_out[out_id];
+		}
+		else{
+			local_out = shared_out[out_id];
+		}
+		
         for(int in_depth=0;in_depth<in_depth_max;in_depth++)
-        {            
-            data_out[out_id] += data_weight[weight_id] * data_in[in_id]; 
-            in_id++;
-            weight_id++;
+        {   
+			local_out += data_weight[weight_id] * data_in[in_id]; 
+			in_id+=in_out_wh;
+            weight_id++; 
         }
+		data_out[out_id] = local_out;
     }
-    
 }
-
 
 
 
@@ -222,6 +245,35 @@ int get_next_pow2(int v)
 
 }
 
+int ceil_div(int val,int div)
+{
+    int result = val/div;
+    if(result * div < val) ++result;
+    return result;
+}
+
+int _max(int val1,int val2)
+{
+    if(val1 > val2)
+    {
+        return val1;
+    }
+    else
+    {
+        return val2;
+    }
+}
+int _min(int val1,int val2)
+{
+    if(val1 < val2)
+    {
+        return val1;
+    }
+    else
+    {
+        return val2;
+    }
+}
 // HERE IT STARTS
 void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_param)
 {
@@ -237,64 +289,67 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
   blob2gpu(out_data, out);
   blob2gpu(w_data, w); 
 
-  int numBlocksX=16;
-  int numBlocksYZ = 7;
 
-  //  
-  int threadsPerBlockX = get_next_pow2(out_depth_max/numBlocksX+1);
-  int threadsPerBlockYZ =out->h/numBlocksYZ;
-
-//   if(out_depth_max == 96 && out->w == 112)
-//   {  // Cant get this specifc convolution to work
-//         timer_destroy();
-//       return convolve_cpu(in,out,w,Kx,Ky, conv_param);
-
-//   }
+  int threadsPerBlockX = 1;
+  int numBlocksX= 1;
+  int threadsPerBlockYZ = 1;
+  int numBlocksYZ = 1;
   // Can we ignore the group for loop?
   if(conv_param->group == 1)
   {
+
+    
     // Can we ignore all these loop?
     if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
     {
-        // For this convolution I mutliplex the width and height to reduce
-        // address calculations
-        numBlocksYZ = 98;
-        printf("N : %i \n",  out->w*out->h*out_depth_max);        
-        if(out->w < 90)
+
+        threadsPerBlockX = _min(out_depth_max,1024);
+        numBlocksX= ceil_div(out_depth_max,threadsPerBlockX);
+        numBlocksYZ = ceil_div(out->h,threadsPerBlockYZ);
+          
+        threadsPerBlockYZ = 1024/threadsPerBlockX;
+        numBlocksYZ = ceil_div(out->w * out->w, threadsPerBlockYZ);
+
+        if(out->d == 1)
         {
-            numBlocksYZ = 49;
+            threadsPerBlockYZ =  _min(1024,out->w * out->w);
+            numBlocksYZ = ceil_div(out->w * out->w,threadsPerBlockYZ);
+
+            threadsPerBlockX = 1;
+            numBlocksX = 1;
         }
-        if(out->w < 50)
-        {
-            numBlocksYZ =28;
-            // Can we get away with a smaller number of blocks?
-        } 
-     
-        threadsPerBlockYZ = out->w * out->w / numBlocksYZ;
         if(out->w == 1)
         {
-            // Sometimes width/height = 1
             numBlocksYZ = 1;
             threadsPerBlockYZ=1;
-        } 
-        
+        }
+
         dim3 grid( numBlocksX,numBlocksYZ, 1 );
         dim3 block(threadsPerBlockX, threadsPerBlockYZ, 1); 
-        // Simplest yet slowest convolution
-        gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed<<<grid,block>>>(
-        in_data,w_data,out_data
-        ,w->h
-        ,out->w*out->h,out->d
-        ,in_depth_max);
-        
+
+		
+		// Simplest yet slowest convolution
+		gpu_device_convolve_depth_parrallel_simple_height_width_multiplexed_shared_mem<<<grid,block>>>(
+		in_data,w_data,out_data
+		,w->h
+		,out->w*out->h,out->d
+		,in_depth_max);	
+
            
     }  
     else
     {
-        printf("N : %i \n",  out->w*out->h*out_depth_max);
+        //return convolve_cpu(in,out,w,Kx,Ky,conv_param);
+  
+
+        numBlocksX=16;
+        numBlocksYZ = 7;
+        threadsPerBlockX = get_next_pow2(out_depth_max/numBlocksX+1);
+        threadsPerBlockYZ =out->h/numBlocksYZ;
+        
         dim3 grid( numBlocksX,numBlocksYZ, numBlocksYZ );
         dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
-        // More complex convolution, runs only once so not really worth optimizing    
+        
         gpu_device_convolve_depth_parrallel<<<grid,block>>>(
             in_data,w_data,out_data
             ,conv_param->Sx,conv_param->Sy
@@ -304,7 +359,6 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
             ,Ky,Kx      
             ,conv_param->group
             ,in_depth_max);
-   
     }
 
 
@@ -312,12 +366,16 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
   }
   else
   {
-    //return convolve_cpu(in,out,w,Kx,Ky, conv_param);
-   // timeit_named("Group_Parrallel",())
-    //printf("WRONG\n");
-
-    printf("N : %i \n",  out->w*out->h*conv_param->group);
+    numBlocksX=16;
+    numBlocksYZ = 7;
+    threadsPerBlockYZ =out->h/numBlocksYZ;
     threadsPerBlockX = get_next_pow2(conv_param->group/numBlocksX+1);
+
+    if(out->w == 1)
+    {
+        numBlocksYZ = 1;
+        threadsPerBlockYZ=1;
+    }
     dim3 grid( numBlocksX,numBlocksYZ, numBlocksYZ );          
     dim3 block(threadsPerBlockX, threadsPerBlockYZ, threadsPerBlockYZ); 
   
@@ -337,31 +395,32 @@ void convolve_gpu(BLOB* in,BLOB* out,BLOB* w,int Kx,int Ky, conv_param_t* conv_p
     
 }
 
-int Parrallel_dim =  out->h * out->w  ;
-//int Sequential_dim = in->d * Kx * Ky* conv_param->group;
-
-writeToFile("Parrallel_dim",Parrallel_dim);
-
 #ifdef DEBUG
 printf("groups : %i \n",conv_param->group);
 printf("out_width %i, out_height %i , out_depth_max : %i \n",out->w,out->h,out_depth_max);
 printf("in_width %i, in_height %i , in_depth_max : %i \n",in->w,in->h,in_depth_max);
 printf("Kx : %i, Ky : %i , Sx : %i ,Sy : %i \n",Kx,Ky,conv_param->Sx,conv_param->Sy);
-printf("GRID : (x : %i) (y : % i) (z : %i) , ",numBlocksX,numBlocksYZ,numBlocksYZ);
 int threads_per_block = threadsPerBlockX * threadsPerBlockYZ * threadsPerBlockYZ;
-if(conv_param->group == 1)
+if(conv_param->group == 1 && Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
   {
-    // Can we ignore all these loop?
-    if(Ky == 1 && Kx == 1 && conv_param->Sx == 1 && conv_param->Sy == 1)
-    {
+    //
+        printf("GRID : (x : %i) (y : % i) (z : %i) , ",numBlocksX,numBlocksYZ,1);
+
         threads_per_block = threadsPerBlockX * threadsPerBlockYZ;
-    }
+        printf("BLOCK : (x : %i) (y : % i) (z : %i), (total tpb : %i) \n",threadsPerBlockX,threadsPerBlockYZ,1,threads_per_block);
+
+    
+}
+else
+{
+  printf("BLOCK : (x : %i) (y : % i) (z : %i), (total tpb : %i) \n",threadsPerBlockX,threadsPerBlockYZ,threadsPerBlockYZ,threads_per_block);
+  printf("GRID : (x : %i) (y : % i) (z : %i) , ",numBlocksX,numBlocksYZ,numBlocksYZ);
+
 }
 if(threads_per_block > 1024)
 {
     printf("TOO MANY THREADS PER BLOCK!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");    
 }
-printf("BLOCK : (x : %i) (y : % i) (z : %i), (total tpb : %i) \n",threadsPerBlockX,threadsPerBlockYZ,threadsPerBlockYZ,threads_per_block);
 
 #endif
  

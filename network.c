@@ -37,7 +37,7 @@ BLOB* network(Network* net, BLOB* input){
         BLOB* out=NULL;
 
         //wrapping the whole layer evaluation in a named timer object
-        timeit_named(layer.name,
+        
 
             
             //depending on type the actions differ
@@ -72,7 +72,7 @@ BLOB* network(Network* net, BLOB* input){
                 break;
             }
 
-        )
+        
         
         //end of timer wrapper
 

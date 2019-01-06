@@ -23,9 +23,11 @@ int argmax(BLOB* b){
 
 int main(int argc, char* argv[]){
     create_file();
+    timer_start();
     if (argc!=2 || !strcmp(argv[1],"-h") || !strcmp(argv[1],"--help"))
         error("Usage: %s <input.png>\n", argv[0]);
-
+   
+   
 #ifndef SILENT
     //set stdout to line buffered such that piping to "tee" does not delay
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -38,7 +40,12 @@ int main(int argc, char* argv[]){
     //Do preprocessing of the image
     info("Preprocessing image\n");
 #ifdef CPU_ONLY
+  
+    timer_start();
     cpu_preprocess(img);
+    writeToFile("pre",(double)timer_stop());
+    printf("CPU PRE");
+    timer_destroy();
 #else
     timeit_named(
         "preprocessing",
@@ -50,10 +57,9 @@ int main(int argc, char* argv[]){
     
     
     //evaluate the network
-    timer_start();
+    
     BLOB* out = network(&mobilenetv2, img);
-    printf("Total Network Execution Time = %lf ms \n",(double)timer_stop()/1000);
-    timer_destroy();
+
 
     
     //get class index of maximum
@@ -85,6 +91,9 @@ int main(int argc, char* argv[]){
 
     //cleanup input image
     blob_free(img);
+    printf("Total Network Execution Time = %lf ms \n",(double)timer_stop()/1000);
+    writeToFile("total",(double)timer_stop());
+    timer_destroy();
     close_file();
     return 0;
 }
