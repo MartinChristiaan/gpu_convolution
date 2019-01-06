@@ -1,115 +1,60 @@
 Custum Log 
 Loading image converted_447846619_ea0e3c9609.png
 Preprocessing image
-Preprocessing on GPU...
-bins/conv1_weights.bin
-N : 401408 
+CPU PREbins/conv1_weights.bin
 bins/conv2_1_expand_weights.bin
-N : 401408 
 bins/conv2_1_dwise_weights.bin
-N : 401408 
 bins/conv2_1_linear_weights.bin
-N : 200704 
 bins/conv2_2_expand_weights.bin
-N : 1204224 
 bins/conv2_2_dwise_weights.bin
-N : 301056 
 bins/conv2_2_linear_weights.bin
-N : 75264 
 bins/conv3_1_expand_weights.bin
-N : 451584 
 bins/conv3_1_dwise_weights.bin
-N : 451584 
 bins/conv3_1_linear_weights.bin
-N : 75264 
 bins/conv3_2_expand_weights.bin
-N : 451584 
 bins/conv3_2_dwise_weights.bin
-N : 112896 
 bins/conv3_2_linear_weights.bin
-N : 25088 
 bins/conv4_1_expand_weights.bin
-N : 150528 
 bins/conv4_1_dwise_weights.bin
-N : 150528 
 bins/conv4_1_linear_weights.bin
-N : 25088 
 bins/conv4_2_expand_weights.bin
-N : 150528 
 bins/conv4_2_dwise_weights.bin
-N : 150528 
 bins/conv4_2_linear_weights.bin
-N : 25088 
 bins/conv4_3_expand_weights.bin
-N : 150528 
 bins/conv4_3_dwise_weights.bin
-N : 150528 
 bins/conv4_3_linear_weights.bin
-N : 50176 
 bins/conv4_4_expand_weights.bin
-N : 301056 
 bins/conv4_4_dwise_weights.bin
-N : 301056 
 bins/conv4_4_linear_weights.bin
-N : 50176 
 bins/conv4_5_expand_weights.bin
-N : 301056 
 bins/conv4_5_dwise_weights.bin
-N : 301056 
 bins/conv4_5_linear_weights.bin
-N : 50176 
 bins/conv4_6_expand_weights.bin
-N : 301056 
 bins/conv4_6_dwise_weights.bin
-N : 301056 
 bins/conv4_6_linear_weights.bin
-N : 50176 
 bins/conv4_7_expand_weights.bin
-N : 301056 
 bins/conv4_7_dwise_weights.bin
-N : 75264 
 bins/conv4_7_linear_weights.bin
-N : 18816 
 bins/conv5_1_expand_weights.bin
-N : 112896 
 bins/conv5_1_dwise_weights.bin
-N : 112896 
 bins/conv5_1_linear_weights.bin
-N : 18816 
 bins/conv5_2_expand_weights.bin
-N : 112896 
 bins/conv5_2_dwise_weights.bin
-N : 112896 
 bins/conv5_2_linear_weights.bin
-N : 18816 
 bins/conv5_3_expand_weights.bin
-N : 112896 
 bins/conv5_3_dwise_weights.bin
-N : 28224 
 bins/conv5_3_linear_weights.bin
-N : 7840 
 bins/conv6_1_expand_weights.bin
-N : 47040 
 bins/conv6_1_dwise_weights.bin
-N : 47040 
 bins/conv6_1_linear_weights.bin
-N : 7840 
 bins/conv6_2_expand_weights.bin
-N : 47040 
 bins/conv6_2_dwise_weights.bin
-N : 47040 
 bins/conv6_2_linear_weights.bin
-N : 7840 
 bins/conv6_3_expand_weights.bin
-N : 47040 
 bins/conv6_3_dwise_weights.bin
-N : 47040 
 bins/conv6_3_linear_weights.bin
-N : 15680 
 bins/conv6_4_weights.bin
-N : 62720 
 bins/fc7_weights.bin
-N : 1000 
 Detected class: 281
 [0;33mRobot finds kitteh![0m
-Total Network Execution Time = 65.594000 ms 
+Total Network Execution Time = 1665.400000 ms 
